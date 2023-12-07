@@ -1,3 +1,4 @@
+// Importing necessary modules
 import path from 'path'
 import { argv } from 'process'
 import crypto from 'crypto'
@@ -10,8 +11,14 @@ import { supportedLocales } from './locales'
 import { getQuestionFullName } from './actions/issue-pr'
 import type { QuizMetaInfo } from './types'
 
+// Define a type for file snapshot
 type Snapshot = Record<string, string>
 
+/**
+ * Calculate the hash of a file.
+ * @param filePathFull - Full path of the file.
+ * @returns Promise that resolves to the file hash.
+ */
 function calculateFileHash(filePathFull: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha1')
@@ -32,13 +39,18 @@ function calculateFileHash(filePathFull: string): Promise<string> {
   })
 }
 
-async function takeSnapshot(quizesPath: string) {
+/**
+ * Recursively take a snapshot of files in a directory.
+ * @param quizesPath - Path of the directory to take a snapshot of.
+ * @returns Promise that resolves to the snapshot of files.
+ */
+async function takeSnapshot(quizesPath: string): Promise<Snapshot> {
   let snapshot: Snapshot = {}
 
   const files = fs.readdirSync(quizesPath)
 
   for (const file of files) {
-    // Might be a file, or a folder
+    // Check if it's a file or a folder
     const fPath = path.join(quizesPath, file)
     const fStats = fs.statSync(fPath)
 
@@ -47,8 +59,7 @@ async function takeSnapshot(quizesPath: string) {
         ...snapshot,
         ...(await takeSnapshot(fPath)),
       }
-    }
-    else {
+    } else {
       snapshot[file] = await calculateFileHash(fPath)
     }
   }
@@ -56,6 +67,11 @@ async function takeSnapshot(quizesPath: string) {
   return snapshot
 }
 
+/**
+ * Read the content of the playground cache.
+ * @param playgroundCachePath - Path to the playground cache file.
+ * @returns Snapshot of the playground cache.
+ */
 function readPlaygroundCache(playgroundCachePath: string): Snapshot {
   if (!fs.existsSync(playgroundCachePath))
     return {}
@@ -63,8 +79,7 @@ function readPlaygroundCache(playgroundCachePath: string): Snapshot {
   try {
     const rawCacheContent = fs.readFileSync(playgroundCachePath)
     return JSON.parse(rawCacheContent.toString())
-  }
-  catch (err) {
+  } catch (err) {
     console.log(c.red('Playground cache corrupted. '
       + 'Cannot generate playground without keeping your changes intact'))
     console.log(c.cyan('Please ensure you have run this: "pnpm generate"'))
@@ -72,7 +87,13 @@ function readPlaygroundCache(playgroundCachePath: string): Snapshot {
   }
 }
 
-function calculateOverridableFiles(cache: Snapshot, snapshot: Snapshot) {
+/**
+ * Calculate files that can be overridden in the playground.
+ * @param cache - Current cache snapshot.
+ * @param snapshot - Snapshot of the files.
+ * @returns Snapshot of overridable files.
+ */
+function calculateOverridableFiles(cache: Snapshot, snapshot: Snapshot): Snapshot {
   const result: Snapshot = {}
 
   for (const quizName in snapshot) {
@@ -83,6 +104,13 @@ function calculateOverridableFiles(cache: Snapshot, snapshot: Snapshot) {
   return result
 }
 
+/**
+ * Check if a quiz file is writable in the playground.
+ * @param quizFileName - Name of the quiz file.
+ * @param overridableFiles - Snapshot of overridable files.
+ * @param playgroundSnapshot - Snapshot of the playground.
+ * @returns Whether the quiz file is writable or not.
+ */
 function isQuizWritable(quizFileName: string, overridableFiles: Snapshot, playgroundSnapshot: Snapshot): boolean {
   return !!(
     overridableFiles[quizFileName]
@@ -90,6 +118,9 @@ function isQuizWritable(quizFileName: string, overridableFiles: Snapshot, playgr
   )
 }
 
+/**
+ * Generate the local playground.
+ */
 async function generatePlayground() {
   const playgroundPath = path.join(__dirname, '../playground')
   const playgroundCachePath = path.join(__dirname, '../.playgroundcache')
@@ -104,14 +135,13 @@ async function generatePlayground() {
   let playgroundSnapshot: Snapshot
 
   if (argv.length === 3 && (argv[2] === '--keep-changes' || argv[2] === '-K')) {
-    console.log(c.bold(c.cyan('We will keep your chanegs while generating.\n')))
+    console.log(c.bold(c.cyan('We will keep your changes while generating.\n')))
     keepChanges = true
 
     playgroundSnapshot = await takeSnapshot(playgroundPath)
 
     overridableFiles = calculateOverridableFiles(currentPlaygroundCache, playgroundSnapshot)
-  }
-  else if (fs.existsSync(playgroundPath)) {
+  } else if (fs.existsSync(playgroundPath)) {
     const result = await prompts([{
       name: 'confirm',
       type: 'confirm',
@@ -177,4 +207,5 @@ async function generatePlayground() {
   console.log()
 }
 
+// Execute the generatePlayground function
 generatePlayground()
