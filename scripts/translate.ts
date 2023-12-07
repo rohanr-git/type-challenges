@@ -1,75 +1,151 @@
-import path from 'path'
-import translate from 'google-translate-open-api'
-import fs from 'fs-extra'
-import { QUIZ_ROOT, loadQuizByNo, loadQuizes } from './loader'
-import { resolveFilePath } from './utils/resolve'
-import type { Quiz } from './types'
-import type { SupportedLocale } from './locales'
-import { t } from './locales'
+import path from 'path';
+import translate from 'google-translate-open-api';
+import fs from 'fs-extra';
+import { loadQuizByNo, loadQuizes, QUIZ_ROOT } from './loader';
+import { resolveFilePath } from './utils/resolve';
+import type { Quiz } from './types';
+import type { SupportedLocale } from './locales';
+import { t } from './locales';
 
-export async function TranslateQuizByNo(no: number, from: SupportedLocale, to: SupportedLocale) {
-  const quiz = await loadQuizByNo(no)
-  if (!quiz)
-    throw new Error(`Quiz #${no} not founded`)
-  return await TranslateQuiz(quiz, from, to)
-}
+class QuizTranslator {
+  private readonly QUIZ_ROOT: string;
+  private readonly codeBlocks: string[] = [];
 
-export async function TranslateQuiz(quiz: Quiz, from: SupportedLocale, to: SupportedLocale) {
-  let translatedReadme = await translateMarkdown(quiz.readme[from], from, to)
+  constructor(QUIZ_ROOT: string) {
+    this.QUIZ_ROOT = QUIZ_ROOT;
+  }
 
-  if (!translatedReadme)
-    throw new Error(`Quiz #${quiz.no} empty translation`)
+  /**
+   * Translate markdown content from one language to another.
+   * @param code - Markdown content to be translated.
+   * @param from - Source language.
+   * @param to - Target language.
+   * @returns Translated markdown content.
+   */
+  private async translateMarkdown(code: string, from: SupportedLocale, to: SupportedLocale): Promise<string | undefined> {
+    const source = this.replaceCodeBlocks(code);
 
-  translatedReadme = `> ${t(to, 'readme.google-translated')}\n\n${translatedReadme.trim()}`
+    const { data: rawResult } = await translate(source, {
+      tld: 'com',
+      from,
+      to,
+    });
 
-  const readmePath = resolveFilePath(path.join(QUIZ_ROOT, quiz.path), 'README', 'md', to)
-  await fs.writeFile(readmePath, translatedReadme, 'utf-8')
-
-  console.log(`Translated [${quiz.no}] ${from} → ${to} | saved to ${readmePath}`)
-}
-
-export async function translateMarkdown(code: string, from: SupportedLocale, to: SupportedLocale) {
-  // to replace the code blocks intro a placeholder then feed it into translator
-  // then replace back for the results
-  const code_blocks: string[] = []
-
-  const source = code
-    .replace(/```[\s\S\n]+?```/g, (v) => {
-      const placeholder = `__${code_blocks.length}__`
-      code_blocks.push(v)
-      return placeholder
-    })
-    .replace(/`[\s\S\n]+?`/g, (v) => {
-      const placeholder = `__${code_blocks.length}__`
-      code_blocks.push(v)
-      return placeholder
-    })
-
-  const { data: rawResult } = await translate(source, {
-    tld: 'com',
-    from,
-    to,
-  })
-
-  if (!rawResult)
-    return
-
-  const result = (rawResult as string)
-    .replace(/__\s*?(\d+?)\s*?__/g, (_, i) => code_blocks[+i])
-
-  return result
-}
-
-export async function TranslateAllQuizes(from: SupportedLocale, to: SupportedLocale) {
-  const quizes = await loadQuizes()
-
-  for (const quiz of quizes) {
-    if (quiz.readme[to] || !quiz.readme[from]) {
-      console.log(`Skipped #${quiz.no}`)
-      continue
+    if (!rawResult) {
+      return undefined;
     }
 
-    console.log(`Translating #${quiz.no} to ${to}`)
-    await TranslateQuiz(quiz, from, to)
+    return this.restoreCodeBlocks(rawResult as string);
   }
+
+  /**
+   * Replace code blocks in the markdown content with placeholders.
+   * @param code - Markdown content with code blocks.
+   * @returns Markdown content with placeholders for code blocks.
+   */
+  private replaceCodeBlocks(code: string): string {
+    return code.replace(/```[\s\S\n]+?```/g, (v) => {
+      const placeholder = `__${this.codeBlocks.length}__`;
+      this.codeBlocks.push(v);
+      return placeholder;
+    });
+  }
+
+  /**
+   * Restore code blocks in the translated markdown content.
+   * @param result - Translated markdown content.
+   * @returns Translated markdown content with original code blocks.
+   */
+  private restoreCodeBlocks(result: string): string {
+    return result.replace(/__\s*?(\d+?)\s*?__/g, (_, i) => this.codeBlocks[+i]);
+  }
+
+  /**
+   * Write translated readme content to a file.
+   * @param quiz - Quiz object.
+   * @param translatedReadme - Translated readme content.
+   * @param to - Target language.
+   */
+  private async writeTranslatedReadme(quiz: Quiz, translatedReadme: string, to: SupportedLocale): Promise<void> {
+    const readmePath = resolveFilePath(path.join(this.QUIZ_ROOT, quiz.path), 'README', 'md', to);
+    await fs.writeFile(readmePath, translatedReadme, 'utf-8');
+
+    console.log(`Translated [${quiz.no}] ${quiz.readme.from} → ${to} | saved to ${readmePath}`);
+  }
+
+  /**
+   * Translate a quiz by its number.
+   * @param no - Quiz number.
+   * @param from - Source language.
+   * @param to - Target language.
+   */
+  public async translateQuizByNo(no: number, from: SupportedLocale, to: SupportedLocale): Promise<void> {
+    const quiz = await loadQuizByNo(no);
+
+    if (!quiz) {
+      throw new Error(`Quiz #${no} not found`);
+    }
+
+    await this.translateQuiz(quiz, from, to);
+  }
+
+  /**
+   * Translate a quiz from one language to another.
+   * @param quiz - Quiz object.
+   * @param from - Source language.
+   * @param to - Target language.
+   */
+  public async translateQuiz(quiz: Quiz, from: SupportedLocale, to: SupportedLocale): Promise<void> {
+    let translatedReadme = await this.translateMarkdown(quiz.readme[from], from, to);
+
+    if (!translatedReadme) {
+      throw new Error(`Quiz #${quiz.no} empty translation`);
+    }
+
+    translatedReadme = `> ${t(to, 'readme.google-translated')}\n\n${translatedReadme.trim()}`;
+
+    await this.writeTranslatedReadme(quiz, translatedReadme, to);
+  }
+
+  /**
+   * Translate all quizzes from one language to another.
+   * @param from - Source language.
+   * @param to - Target language.
+   */
+  public async translateAllQuizes(from: SupportedLocale, to: SupportedLocale): Promise<void> {
+    const quizes = await loadQuizes();
+
+    for (const quiz of quizes) {
+      if (quiz.readme[to] || !quiz.readme[from]) {
+        console.log(`Skipped #${quiz.no}`);
+        continue;
+      }
+
+      console.log(`Translating #${quiz.no} to ${to}`);
+      await this.translateQuiz(quiz, from, to);
+    }
+  }
+}
+
+// Constants and functions not related to translation
+const QUIZ_ROOT_PATH = path.join(__dirname, '../quiz-root');
+const quizTranslator = new QuizTranslator(QUIZ_ROOT);
+
+/**
+ * Translate a quiz by its number.
+ * @param no - Quiz number.
+ * @param from - Source language.
+ * @param to - Target language.
+ */
+export async function translateQuizByNo(no: number, from: SupportedLocale, to: SupportedLocale): Promise<void> {
+  await quizTranslator.translateQuizByNo(no, from, to);
+}
+
+/**
+ * Translate all quizzes from one language to another.
+ * @param from - Source language.
+ * @param to - Target language.
+ */
+export async function translateAllQuizes(from: SupportedLocale, to: SupportedLocale): Promise<void> {
+  await quizTranslator.translateAllQuizes(from, to);
 }
