@@ -1,13 +1,14 @@
 // Import necessary packages and modules
-import path from 'path';
-import fs from 'fs-extra';
-import type { SupportedLocale } from './locales';
-import { defaultLocale, f, supportedLocales, t } from './locales';
-import { loadQuizes, resolveInfo } from './loader';
-import { Quiz, QuizMetaInfo } from './types';
+import path from 'path';  // Import the 'path' module for working with file paths
+import fs from 'fs-extra';  // Import the 'fs-extra' module for file system operations
+import type { SupportedLocale } from './locales';  // Import types from the 'locales' module
+import { defaultLocale, f, supportedLocales, t } from './locales';  // Import specific exports from the 'locales' module
+import { loadQuizes, resolveInfo } from './loader';  // Import functions from the 'loader' module
+import { Quiz, QuizMetaInfo } from './types';  // Import types from the 'types' module
 
 // Describe the colors that correspond to the various quiz levels and their ranking.
 class QuizUtils {
+  // Define static properties for difficulty colors and ranking
   static DifficultyColors: Record<string, string> = {
     warm: 'teal',
     easy: '7aad0c',
@@ -15,10 +16,11 @@ class QuizUtils {
     hard: 'de3d37',
     extreme: 'b11b8d',
   };
+  private static DifficultyRank = ['warm', 'easy', 'medium', 'hard', 'extreme'];  // Define the ranking of difficulty levels
 
-  private static DifficultyRank = ['warm', 'easy', 'medium', 'hard', 'extreme'];
-
+  // Define utility functions for escaping HTML, creating badge URLs, and formatting information
   public static escapeHtml(unsafe: string): string {
+    // Function to escape unsafe characters in HTML
     return unsafe
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -28,14 +30,17 @@ class QuizUtils {
   }
 
   private static toBadgeURL(label: string, text: string, color: string, args = ''): string {
+    // Function to generate a badge URL
     return `https://img.shields.io/badge/${encodeURIComponent(label.replace(/-/g, '--'))}
 ${encodeURIComponent(text.replace(/-/g, '--'))}-${color}${args}`;
   }
 
   private static toBadge(label: string, text: string, color: string, args = ''): string {
+    // Function to generate a badge
     return `<img src="${QuizUtils.toBadgeURL(label, text, color, args)}" alt="${text}"/>`;
   }
 
+  // Functions for creating badge links and plain text links
   public static toBadgeLink(url: string, label: string, text: string, color: string, args = ''): string {
     return `<a href="${url}" target="_blank">${QuizUtils.toBadge(label, text, color, args)}</a> `;
   }
@@ -44,11 +49,13 @@ ${encodeURIComponent(text.replace(/-/g, '--'))}-${color}${args}`;
     return `<a href="${url}" target="_blank">${text}</a> `;
   }
 
+  // Function to format author information
   public static toAuthorInfo(author: Partial<QuizMetaInfo['author']> = {}): string {
     return `by ${author.name}${author.github ? ` <a href="https://github.com/${author.github}" 
 target="_blank">@${author.github}</a>` : ''}`;
   }
 
+  // Functions for creating difficulty badges and plain text representations
   public static toDifficultyBadgeInverted(difficulty: string, locale: SupportedLocale, count: number): string {
     return QuizUtils.toBadge(t(locale, `difficulty.${difficulty}`), count.toString(), QuizUtils.DifficultyColors[difficulty]);
   }
@@ -257,6 +264,6 @@ class QuizUpdater {
     }
   }
 }
+
 // Update based on command line argument
 QuizUpdater.updateREADMEs(process.argv.slice(2)[0] as any);
-
